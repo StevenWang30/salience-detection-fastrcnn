@@ -6,9 +6,11 @@ from __future__ import print_function
 import datasets
 import numpy as np
 from model.utils.config import cfg
-from datasets.factory import get_imdb
+from lib.datasets.factory import get_imdb
 import PIL
 import pdb
+
+import IPython
 
 def prepare_roidb(imdb):
   """Enrich the imdb's roidb by adding some derived quantities that
@@ -115,6 +117,7 @@ def combined_roidb(imdb_names, training=True):
 
   roidbs = [get_roidb(s) for s in imdb_names.split('+')]
   roidb = roidbs[0]
+  # IPython.embed()
 
   if len(roidbs) > 1:
     for r in roidbs[1:]:

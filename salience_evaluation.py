@@ -30,11 +30,13 @@ from model.rpn.bbox_transform import clip_boxes
 # from model.nms.nms_wrapper import nms
 from model.roi_layers import nms
 from model.rpn.bbox_transform import bbox_transform_inv
-from model.utils.net_utils import save_net, load_net, vis_detections
+from lib.model.utils.net_utils import save_net, load_net, vis_detections
 from model.faster_rcnn.vgg16 import vgg16
 from model.faster_rcnn.resnet import resnet
 
 import IPython
+import heatmap
+from scipy import ndimage
 
 try:
     xrange          # Python 2
@@ -150,7 +152,7 @@ if __name__ == '__main__':
   load_name = os.path.join(input_dir,
     'faster_rcnn_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
 
-  load_name = '/code/SalienceDetection/models/vgg16/pascal_voc/faster_rcnn_1_20_10021.pth'
+  load_name = '/code/SalienceDetection/models/vgg16/pascal_voc/faster_rcnn_1_10_834.pth'
 
   # initilize the network here.
   if args.net == 'vgg16':
@@ -281,9 +283,10 @@ if __name__ == '__main__':
       det_toc = time.time()
       detect_time = det_toc - det_tic
       misc_tic = time.time()
-      if vis:
-          im = cv2.imread(imdb.image_path_at(i))
-          im2show = np.copy(im)
+      # if vis:
+      im = cv2.imread(imdb.image_path_at(i))
+      im2show = np.copy(im)
+      heat_map = np.zeros((im2show.shape[0], im2show.shape[1]))
       for j in xrange(1, imdb.num_classes):
           inds = torch.nonzero(scores[:,j]>thresh).view(-1)
           # if there is det
@@ -299,23 +302,30 @@ if __name__ == '__main__':
             # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
             cls_dets = cls_dets[order]
             keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
-            IPython.embed()
-            cls_dets = cls_dets[keep.view(-1).long()]
+            cls_dets_nms = cls_dets[keep.view(-1).long()]
             if vis:
-              im2show = vis_detections(im2show, imdb.classes[j], cls_dets.cpu().numpy(), 0.3)
+              im2show = vis_detections(im2show, imdb.classes[j], cls_dets_nms.cpu().numpy(), 0.3)
             all_boxes[j][i] = cls_dets.cpu().numpy()
+            for b in range(cls_dets.shape[0]):
+                bbox = tuple(int(np.round(x)) for x in cls_dets.cpu().numpy()[b, :4])
+                score = cls_dets.cpu().numpy()[b, -1]
+                heat_map[bbox[1]:bbox[3], bbox[0]:bbox[2]] += score
+            # for b in range(cls_dets_nms.shape[0]):
+            #   bbox = tuple(int(np.round(x)) for x in cls_dets_nms.cpu().numpy()[b, :4])
+            #   heat_map[bbox[1]:bbox[3], bbox[0]:bbox[2]] += 1
+            #   # IPython.embed()
           else:
             all_boxes[j][i] = empty_array
 
-      # Limit to max_per_image detections *over all classes*
-      if max_per_image > 0:
-          image_scores = np.hstack([all_boxes[j][i][:, -1]
-                                    for j in xrange(1, imdb.num_classes)])
-          if len(image_scores) > max_per_image:
-              image_thresh = np.sort(image_scores)[-max_per_image]
-              for j in xrange(1, imdb.num_classes):
-                  keep = np.where(all_boxes[j][i][:, -1] >= image_thresh)[0]
-                  all_boxes[j][i] = all_boxes[j][i][keep, :]
+      # # Limit to max_per_image detections *over all classes*
+      # if max_per_image > 0:
+      #     image_scores = np.hstack([all_boxes[j][i][:, -1]
+      #                               for j in xrange(1, imdb.num_classes)])
+      #     if len(image_scores) > max_per_image:
+      #         image_thresh = np.sort(image_scores)[-max_per_image]
+      #         for j in xrange(1, imdb.num_classes):
+      #             keep = np.where(all_boxes[j][i][:, -1] >= image_thresh)[0]
+      #             all_boxes[j][i] = all_boxes[j][i][keep, :]
 
       misc_toc = time.time()
       nms_time = misc_toc - misc_tic
@@ -324,13 +334,19 @@ if __name__ == '__main__':
           .format(i + 1, num_images, detect_time, nms_time))
       sys.stdout.flush()
 
-      if vis:
-          # print('save image to r')
-          cv2.imwrite('result.png', im2show)
+      output_path = '/data/Salient_Image_data/output/' + imdb.image_path_at(i).split('/')[-1]
 
-          # pdb.set_trace()
-          #cv2.imshow('test', im2show)
-          #cv2.waitKey(0)
+      heat_map_f = ndimage.filters.gaussian_filter(heat_map, sigma=40)
+      heatmap.add(im2show, heat_map_f, alpha=0.7, save=output_path)
+      IPython.embed()
+      #
+      # if vis:
+      #     # print('save image to r')
+      #     cv2.imwrite('result.png', im2show)
+      #
+      #     # pdb.set_trace()
+      #     #cv2.imshow('test', im2show)
+      #     #cv2.waitKey(0)
 
   with open(det_file, 'wb') as f:
       pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
