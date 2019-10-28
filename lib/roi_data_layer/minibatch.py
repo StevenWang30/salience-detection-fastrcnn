@@ -75,6 +75,8 @@ def _get_image_blob(roidb, scale_inds):
     if roidb[i]['flipped']:
       im = im[:, ::-1, :]
     target_size = cfg.TRAIN.SCALES[scale_inds[i]]
+    # import IPython
+    # IPython.embed()
     im, im_scale = prep_im_for_blob(im, cfg.PIXEL_MEANS, target_size,
                     cfg.TRAIN.MAX_SIZE)
     im_scales.append(im_scale)

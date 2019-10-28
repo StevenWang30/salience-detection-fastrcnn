@@ -234,6 +234,7 @@ if __name__ == '__main__':
   empty_array = np.transpose(np.array([[],[],[],[],[]]), (1,0))
   for i in range(num_images):
       data = next(data_iter)
+      IPython.embed()
       with torch.no_grad():
               im_data.resize_(data[0].size()).copy_(data[0])
               im_info.resize_(data[1].size()).copy_(data[1])

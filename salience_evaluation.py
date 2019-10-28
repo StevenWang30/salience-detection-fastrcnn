@@ -23,20 +23,22 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
 import pickle
-from roi_data_layer.roidb import combined_roidb
-from roi_data_layer.roibatchLoader import roibatchLoader
-from model.utils.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
-from model.rpn.bbox_transform import clip_boxes
+from lib.roi_data_layer.roidb import combined_roidb
+from lib.roi_data_layer.roibatchLoader import roibatchLoader
+from lib.model.utils.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
+from lib.model.rpn.bbox_transform import clip_boxes
 # from model.nms.nms_wrapper import nms
-from model.roi_layers import nms
-from model.rpn.bbox_transform import bbox_transform_inv
+from lib.model.roi_layers import nms
+from lib.model.rpn.bbox_transform import bbox_transform_inv
 from lib.model.utils.net_utils import save_net, load_net, vis_detections
-from model.faster_rcnn.vgg16 import vgg16
-from model.faster_rcnn.resnet import resnet
+from lib.model.faster_rcnn.vgg16 import vgg16
+from lib.model.faster_rcnn.resnet import resnet
 
 import IPython
 import heatmap
 from scipy import ndimage
+
+from lib.datasets.evaluation_dataloader import evaluateDataLoader
 
 try:
     xrange          # Python 2
@@ -91,6 +93,10 @@ def parse_args():
   parser.add_argument('--vis', dest='vis',
                       help='visualization mode',
                       action='store_false')
+
+  parser.add_argument('--data', dest='data_root_path',
+                      help='evaluation data root path', default="/data/Salient_Image_data/test_data",
+                      type=str)
   args = parser.parse_args()
   return args
 
@@ -175,7 +181,6 @@ if __name__ == '__main__':
   if 'pooling_mode' in checkpoint.keys():
     cfg.POOLING_MODE = checkpoint['pooling_mode']
 
-
   print('load model successfully!')
   # initilize the tensor holder here.
   im_data = torch.FloatTensor(1)
@@ -219,11 +224,13 @@ if __name__ == '__main__':
                for _ in xrange(imdb.num_classes)]
 
   output_dir = get_output_dir(imdb, save_name)
-  dataset = roibatchLoader(roidb, ratio_list, ratio_index, 1, \
-                        imdb.num_classes, training=False, normalize = False)
+  # dataset = roibatchLoader(roidb, ratio_list, ratio_index, 1, \
+  #                       imdb.num_classes, training=False, normalize = False)
+  dataset = evaluateDataLoader(roidb, args.data_root_path, batch_size=1, num_classes=imdb.num_classes)
   dataloader = torch.utils.data.DataLoader(dataset, batch_size=1,
                             shuffle=False, num_workers=0,
                             pin_memory=True)
+  num_images = len(dataset)
 
   data_iter = iter(dataloader)
 
@@ -234,6 +241,7 @@ if __name__ == '__main__':
   empty_array = np.transpose(np.array([[],[],[],[],[]]), (1,0))
   for i in range(num_images):
       data = next(data_iter)
+      input_img_path = data[4][0]
       with torch.no_grad():
               im_data.resize_(data[0].size()).copy_(data[0])
               im_info.resize_(data[1].size()).copy_(data[1])
@@ -241,6 +249,8 @@ if __name__ == '__main__':
               num_boxes.resize_(data[3].size()).copy_(data[3])
 
       det_tic = time.time()
+
+
       rois, cls_prob, bbox_pred, \
       rpn_loss_cls, rpn_loss_box, \
       RCNN_loss_cls, RCNN_loss_bbox, \
@@ -284,7 +294,7 @@ if __name__ == '__main__':
       detect_time = det_toc - det_tic
       misc_tic = time.time()
       # if vis:
-      im = cv2.imread(imdb.image_path_at(i))
+      im = cv2.imread(input_img_path)
       im2show = np.copy(im)
       heat_map = np.zeros((im2show.shape[0], im2show.shape[1]))
       for j in xrange(1, imdb.num_classes):
@@ -334,11 +344,15 @@ if __name__ == '__main__':
           .format(i + 1, num_images, detect_time, nms_time))
       sys.stdout.flush()
 
-      output_path = '/data/Salient_Image_data/output/' + imdb.image_path_at(i).split('/')[-1]
+
+      output_dir = '/data/Salient_Image_data/output/' + input_img_path.split('/')[-2]
+      if not os.path.exists(output_dir):   os.makedirs(output_dir)
+      output_path = os.path.join(output_dir, input_img_path.split('/')[-1])
 
       heat_map_f = ndimage.filters.gaussian_filter(heat_map, sigma=40)
       heatmap.add(im2show, heat_map_f, alpha=0.7, save=output_path)
-      IPython.embed()
+      # IPython.embed()
+
       #
       # if vis:
       #     # print('save image to r')
@@ -348,11 +362,11 @@ if __name__ == '__main__':
       #     #cv2.imshow('test', im2show)
       #     #cv2.waitKey(0)
 
-  with open(det_file, 'wb') as f:
-      pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
-
-  print('Evaluating detections')
-  imdb.evaluate_detections(all_boxes, output_dir)
+  # with open(det_file, 'wb') as f:
+  #     pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
+  #
+  # print('Evaluating detections')
+  # imdb.evaluate_detections(all_boxes, output_dir)
 
   end = time.time()
   print("test time: %0.4fs" % (end - start))

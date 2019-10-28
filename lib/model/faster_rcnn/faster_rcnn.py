@@ -78,6 +78,9 @@ class _fasterRCNN(nn.Module):
         elif cfg.POOLING_MODE == 'pool':
             pooled_feat = self.RCNN_roi_pool(base_feat, rois.view(-1,5))
 
+        # import IPython
+        # IPython.embed()
+
         # feed pooled features to top model
         pooled_feat = self._head_to_tail(pooled_feat)
 
